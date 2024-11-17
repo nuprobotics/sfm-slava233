@@ -7,18 +7,43 @@ import yaml
 
 
 # Task 2
-def get_matches(image1, image2) -> typing.Tuple[
-    typing.Sequence[cv2.KeyPoint], typing.Sequence[cv2.KeyPoint], typing.Sequence[cv2.DMatch]]:
+def get_matches(
+    image1: np.ndarray,
+    image2: np.ndarray,
+    k_ratio: float = 0.75
+) -> typing.Tuple[
+    typing.Sequence[cv2.KeyPoint],
+    typing.Sequence[cv2.KeyPoint],
+    typing.Sequence[cv2.DMatch]
+]:
+    gray1 = cv2.cvtColor(image1, cv2.COLOR_BGR2GRAY)
+    gray2 = cv2.cvtColor(image2, cv2.COLOR_BGR2GRAY)
+
     sift = cv2.SIFT_create()
-    img1_gray = cv2.cvtColor(image1, cv2.COLOR_BGR2GRAY)
-    img2_gray = cv2.cvtColor(image2, cv2.COLOR_BGR2GRAY)
-    kp1, descriptors1 = sift.detectAndCompute(img1_gray, None)
-    kp2, descriptors2 = sift.detectAndCompute(img2_gray, None)
+    kp1, d1 = sift.detectAndCompute(gray1, None)
+    kp2, d2 = sift.detectAndCompute(gray2, None)
 
-    bf = cv2.BFMatcher()
-    matches_1_to_2: typing.Sequence[typing.Sequence[cv2.DMatch]] = bf.knnMatch(descriptors1, descriptors2, k=2)
+    bfm = cv2.BFMatcher()
+    m12 = bfm.knnMatch(d1, d2, k=2)
+    m21 = bfm.knnMatch(d2, d1, k=2)
 
-    # YOUR CODE HERE
+    m12_filtered = [
+        m[0] for m in m12
+        if len(m) == 2 and m[0].distance < k_ratio * m[1].distance
+    ]
+    m21_filtered = [
+        m[0] for m in m21
+        if len(m) == 2 and m[0].distance < k_ratio * m[1].distance
+    ]
+
+    final_matches = []
+    for m in m12_filtered:
+        for rm in m21_filtered:
+            if m.queryIdx == rm.trainIdx and m.trainIdx == rm.queryIdx:
+                final_matches.append(m)
+                break
+
+    return kp1, kp2, final_matches
 
 
 def get_second_camera_position(kp1, kp2, matches, camera_matrix):
@@ -39,9 +64,36 @@ def triangulation(
         kp1: typing.Sequence[cv2.KeyPoint],
         kp2: typing.Sequence[cv2.KeyPoint],
         matches: typing.Sequence[cv2.DMatch]
-):
-    pass
-    # YOUR CODE HERE
+) -> np.ndarray:
+
+    R1 = camera1_rotation_matrix
+    T1 = camera1_translation_vector
+    P1 = camera_matrix @ np.hstack((R1, T1))
+
+    R2 = camera2_rotation_matrix
+    T2 = camera2_translation_vector
+    P2 = camera_matrix @ np.hstack((R2, T2))
+
+    points = []
+
+    for match in matches:
+        pt1 = np.array(kp1[match.queryIdx].pt)
+        pt2 = np.array(kp2[match.trainIdx].pt)
+
+        A = np.array([
+            pt1[0] * P1[2] - P1[0],
+            pt1[1] * P1[2] - P1[1],
+            pt2[0] * P2[2] - P2[0],
+            pt2[1] * P2[2] - P2[1]
+        ])
+
+        _, _, Vt = np.linalg.svd(A)
+        X = Vt[-1]
+        X /= X[3]
+
+        points.append(X[:3])
+
+    return np.array(points)
 
 
 # Task 4
@@ -51,14 +103,15 @@ def resection(
         camera_matrix,
         matches,
         points_3d
-):
+) -> typing.Tuple[np.ndarray, np.ndarray]:
     pass
-    # YOUR CODE HERE
 
 
-def convert_to_world_frame(translation_vector, rotation_matrix):
-    pass
-    # YOUR CODE HERE
+# Task 5
+def convert_to_world_frame(translation_vector: np.ndarray, rotation_matrix: np.ndarray) -> typing.Tuple[np.ndarray, np.ndarray]:
+    cam_pos = -rotation_matrix.T @ translation_vector
+    cam_rot = rotation_matrix.T
+    return cam_pos, cam_rot
 
 
 def visualisation(
