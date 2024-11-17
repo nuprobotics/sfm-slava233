@@ -9,17 +9,33 @@ def triangulation(
         camera_rotation2: np.ndarray,
         image_points1: np.ndarray,
         image_points2: np.ndarray
-):
-    """
-    :param camera_matrix: first and second camera matrix, np.ndarray 3x3
-    :param camera_position1: first camera position in world coordinate system, np.ndarray 3x1
-    :param camera_rotation1: first camera rotation matrix in world coordinate system, np.ndarray 3x3
-    :param camera_position2: second camera position in world coordinate system, np.ndarray 3x1
-    :param camera_rotation2: second camera rotation matrix in world coordinate system, np.ndarray 3x3
-    :param image_points1: points in the first image, np.ndarray Nx2
-    :param image_points2: points in the second image, np.ndarray Nx2
-    :return: triangulated points, np.ndarray Nx3
-    """
+) -> np.ndarray:
 
-    pass
-    # YOUR CODE HERE
+    def world_to_camera(camera_position, camera_rotation):
+        transformed_position = -camera_rotation.T @ camera_position
+        extrinsic_matrix = np.hstack((camera_rotation.T, transformed_position.reshape(-1, 1)))
+        return camera_matrix @ extrinsic_matrix
+
+    P1 = world_to_camera(camera_position1, camera_rotation1)
+    P2 = world_to_camera(camera_position2, camera_rotation2)
+
+    points = []
+
+    for i in range(image_points1.shape[0]):
+        x1, y1 = image_points1[i]
+        x2, y2 = image_points2[i]
+
+        A = np.array([
+            (x1 * P1[2] - P1[0]),
+            (y1 * P1[2] - P1[1]),
+            (x2 * P2[2] - P2[0]),
+            (y2 * P2[2] - P2[1])
+        ])
+
+        _, _, Vt = np.linalg.svd(A)
+        X = Vt[-1]
+        X /= X[3]
+
+        points.append(X[:3])
+
+    return np.array(points)
